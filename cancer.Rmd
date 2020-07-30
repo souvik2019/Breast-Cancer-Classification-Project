@@ -1,0 +1,638 @@
+---
+title: "Breast Cancer Classification"
+author: "Souvik Paul"
+date: "24/07/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Abstract
+
+Various Classification techniques are used in this project to classify the cells into 'Benign' and 'Malign'. But before applying those techniques firstly the data is cleaned up by imputing missing observations (using Random Forest) and detecting outliers (using Mahalanobis Distance). KNN,Logistic Regression, LDA, Naive Bayes, Decision Tree, Random Forest, SVM and ANN are used and in each case effect of outliers is detected. Two models are used for Naive Bayes(Kernel and without Kernel) and ANN (hidden layer : one and two) and multiple models are used for Random Forest and SVM , and finally efficiency of each model are checked. Finally importance of each feature is checked and it is also checked if there is any possibility of excluding any feature (using Random Forest).
+
+# Introduction
+
+Classification is a part of Supervised Learning in Machine Learning. And Supervised Learning is perhaps best described by its own name. A Supervised Learning algorithm which is taught by the data it is given. In our modern era Machine Learning is used vastly in medical sciences. To classify presence or absence of any disease like diabetes, heart disease, cancer etc. in human body, Machine Learning techniques are applied and impressive results are found. In this project our intension is to classify presence of breast cancer symptomps in a cell. The importance of classifying cancer patients into high or low risk groups has led many researchers, from the biomedical and bio informatics field, to study the application of Machine Learning methods. The ability of Machine Learning tools to detect key features from complex datasets reveals their importance. A variety of these techniques, including Artificial Neural Network, K Nearest Neighbour, Support vector Machine etc. have been widely applied in cancer research for the development of predictive models as at a fundamental level, it is evident that Machine Learning is helping to improve basic understanding of cancer development average progression. 
+
+# Data Information
+
+'Wisconsin Breast Cancer (Original)' dataset is used here and it is collected from <https://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+(original)>. This data consists of 698 observations with 11 features. At first stage (Jan 1989) this data consisted of only 367 instances, samples were arrived periodically and after 7 stages sample size becomes 698. These 11 features are – 
+
+**(i) Sample Code Number -** Sample id number  
+
+**(ii) Clump Thickness-** It describes a cell monolayered or multilayered. Multilayered cell implies tendency towards maliganancy.
+
+**(iii) Uniformity of Cell Size-** It evaluates the consistency in size of the cells in sample. Inconsistency shows tendency towards malignancy.
+
+**(iv) Uniformity of Cell shape-** It estimates the equality of cell shapes and identify marginal variances. Unequal cell shapes may be regarded as a chance of malignancy.
+
+**(v) Marginal Adhesion-** It quantifies how much cells on the outside of the epithelial tend to stick together. Lower the quantity higher will be the chance of malignant cells.
+
+**(vi) Single Epithelial Cell Size-** It relates to cell uniformity, determines if epithelial cells are significantly enlarged. Large cell indicates malignancy.
+
+**(vii) Bare Nuclei-** It calculate the proportion of the number of cells not surrounded by cytoplasm to those that are. Lower the proportion higher will be the chance of malignant cells.
+
+**(viii) Bland Chromatin-** It rates the uniform texture of the nucleus in a range from fine to coarse. Coarse rating indicates malignancy. 
+
+**(ix) Normal Nucleoli-** Determines whether the nucleoli are small and rarely visible or larger, more visible and more plentiful. Later case indicates malignancy.
+
+**(x) Mitoses-** Describes the level of mitotic cell reproduction activity. Higher the level higher will be chance of malignancy.
+
+**(xi) Class-** ‘*Benign*’ for Normal cell and ‘*Malignant*’ for cancer cell.
+
+All the features **(ii)-(x)** are valued on a scale of 1-10, with 1 being the closest to '*Benign*' and 10 towards '*Malignant*'.
+
+# Objective
+
+Objective of this project is to classify the new cells into two groups '*Benign*' and '*Malign*' on the basis other features. And it will checked if we can reduce some features without losing too much information. We will identify the features which are most important in diagnosis.
+
+# Data Pre-processing
+
+Here we chose '**Class**' variable as our response variable, where '2' indicates '*Benign*' and '4' indicates '*Malignant*'. Now we import the data and check dimension and first few rows of the data.
+
+```{r }
+data=read.delim('data.txt',sep=',',na.strings = '?')
+dim(data)
+head(data)
+```
+
+Now we will exclude the first column which is '**Sample Code Number**' as it is of no use in inference. Then we rename our features appropriately and define our response.
+```{r}
+data=data[,-1]
+colnames(data)=c('Clump_thik','Unif_cell_size','Unif_cell_shape','Mar_adhe','Epi_cell_size','Bare_nuclei','Bland_chrom','Norm_nucleoli','Mitoses','Class')
+y=data[,which(colnames(data)=='Class')]
+head(data)
+dim(data)
+```
+
+Now we see that there is 698 observations, 9 predictor variables and 1 response variable.
+
+### Missing Value Imputation
+
+Firstly we will check if there is any missing value.
+```{r}
+which(is.na(data)==T)
+length(which(is.na(data)==T))
+colnames(data)[which(is.na(colSums(data))==T)]
+```
+
+This indicates that there are `r length(which(is.na(data)==T))` missing values. Only the variable 'Bare_nuclei' contains missing values. Before imputing missing values take a look into the data - 
+```{r}
+str(data)
+mis=which(is.na(data$Bare_nuclei)==T)
+```
+
+Here all the variables are of integer type but we need the response variable **Class** as categorical. So, we need to modify it. 
+```{r}
+data$Class=as.factor(data$Class)
+str(data)
+```
+
+Now we impute the missing values using Random Forest.
+```{r,warning=F}
+library(randomForest)
+set.seed(99)
+data=rfImpute(Class~.,data=data,iter=6)
+```
+
+By `iter=6` we repeat the random forest 6 times. After each iteration OOB(out of bag error rate) is printed. This should get smaller if the estimates improve. Since it doesnot, we can conclude our estimates are as good as they are going to get with this random forest method. Now let's see the imputed values.
+```{r}
+data$Bare_nuclei[mis]
+```
+But here our predictor variables are of integer type. So, we need conversion. 
+```{r}
+data$Bare_nuclei=round(data$Bare_nuclei)
+data$Bare_nuclei[mis]
+```
+
+### Spliting the Data into Train-Test
+
+We will now divide the data into 4:1 ratio respectively for Train and Test data. We will chose randomly 80% data for training set and remaining for test set.
+```{r}
+ind=sample(698,0.8*698)
+data_train=data[ind,]
+dim(data_train)
+data_test=data[-ind,]
+dim(data_test)
+```
+
+So, training data consists of `r dim(data_train)[1]` observations and test data consists of `r dim(data_test)[1]` observations.
+
+Renaming the rows of train set -
+```{r,warning=F}
+obs=seq(nrow(data_train))
+rownames(data_train)=obs
+```
+
+
+# Exploratory Data Analysis
+
+In the train data we have 558 observations and 9 predictor variables and we will see the nature of these 9 variables indivisulaly along with the response.
+```{r,warning=F}
+library(skimr)
+skim(data_train)
+```
+
+Here 368 observations belongs to benign class and 190observations belong to Malign class. We see that distribution of every predictor is positively skewed with a very thin and large tail. We can observe that 'Uniformity of cell size', 'Uniformity of cell shape', 'Marginal adhesion', 'Bare nuclei', 'Normal nucleoli' and 'Mitoses' have 50% observation as 1 where 50% observations for 'Epithelial cell size' and 'Bland Chromatin' are less than equal to 2 and 3 respectively.We will check if there is any relationship among the predictors.
+```{r}
+plot(data_train[,2:10],pch=20,col='red')
+```
+
+Correlation between the variables - 
+```{r}
+cor(data_train[,2:10])
+```
+
+We see that there is no significant relationship except the pair 'Uniformity of cell size' and 'Uniformity of cell shape'(`r cor(data_train[,2:10])[2,3]`).
+
+# Outliers
+
+We will find outliers separately for class 'Benign' and 'Malign'. We will use **Mahalanobis Distance** to detect otliers.
+```{r}
+x=data_train[,2:10]
+ind1=which(data_train$Class=='2')
+x_ben=x[ind1,]
+x_mal=x[-ind1,]
+```
+
+`x` is the matrix of 9 predictor variables and `x_ben` and `x_mal` correspond to 'Benign' and 'Malign' class respectively. Now we plot 'Mahalanobis Distance' for each point and check if there is any unusual distance (which implies outliers).
+```{r, warning=F}
+md1=mahalanobis(x_ben,colMeans(x_ben),cov(x_ben))
+library(ggplot2)
+obs1=obs[ind1]
+df1=as.data.frame(obs1,md1)
+ggplot(df1,aes(x=obs1,y=md1))+geom_point(col='blue')+ggtitle('Mahalanobis Distance(Benign)')+labs(x='observations',y='Distance')+theme_light()
+```
+
+It seems that the point whose distance is greater than 150 is unusual.So, we keep track of it.
+```{r}
+out=which(md1>150)
+md2=mahalanobis(x_mal,colMeans(x_mal),cov(x_mal))
+obs2=obs[-ind1]
+df2=as.data.frame(obs2,md2)
+ggplot(df2,aes(x=obs2,y=md2))+geom_point(col='blue')+ggtitle('Mahalanobis Distance(Malign)')+labs(x='observations',y='Distance')+theme_light()
+
+```
+
+Here the point greater than 25 looks like unusual , so we will puu it on `out`.
+```{r}
+out=append(out,which(md2>25))
+out
+out=as.numeric(names(out)) #store the rowname such that it can be easily detected from train data 
+```
+
+So, we regard `r out[1]`th and `r out[2]`th point of train data as outliers.
+
+# Classification
+
+We will build classification models based on various methods, each with the outliers and without the outliers, and will check difference in the accuracy. In this cancer classification process **False Negative** (cells predicted as benign but actually malign) is considered as most severe error. Better model will be judged on the basis of percentage of **False Negative** and **Accuracy**.
+
+We will create a separate dataset without outliers.
+
+```{r}
+data_train_out=data_train[-out,]
+dim(data_train_out)
+train_class=data_train[,1] #train data response
+train_class_out=data_train_out[,1]
+test_class=data_test[,1]  #test data response
+```
+
+### K-Nearest Neighbour
+
+KNN is a simple algorithm that stores all availabe cases and classifies new cases based on distance function. A case is classified by majority vote of its neighbour with the case being assigned to the class most common among its K nearest neighbours measured by a distance function. If K=1 then the new case simply assigned to the class of nearest neighbour. Default distance (between two vector **x** and **y**) function is - 
+
+$$Euclidean=\sqrt{\sum_{i=1}^n{(x_i-y_i)}^2}$$
+Other distance functions are **Manhattan**, **Minkowski** etc.
+
+Now we use it to classify our data.
+
+```{r,warning=F}
+library(class)
+test_class_pred_k1=knn(train=data_train,test=data_test,cl=train_class,k=10) #we use 10 nearest neighbour
+tab_k1=table(test_class_pred_k1,test_class)  
+```
+
+Now we make function to check percentage of accuracy , mis-classification and false negative error.
+```{r}
+#error function
+err=function(tab){
+  print('The Confusion Matrix is :')
+  print(tab)
+  a=(sum(diag(tab)))/(sum(tab))
+  m=1-a
+  f=tab[1,2]/(sum(tab))
+  t=c(a,m,f)*100
+  names(t)=c('Accuracy %','Mis-classification %','False Negative %')
+  print(t)
+}
+err(tab_k1)
+```
+
+Now we check without outliers.
+```{r}
+test_class_pred_k2=knn(train = data_train_out, test = data_test, cl=train_class_out,k=10 )
+tab_k2=table(test_class_pred_k2,test_class)
+err(tab_k2)
+```
+
+We see that accuracy is good and there is no effect of outliers.
+
+### Logistic Regression
+
+Logistic Regression is used to predict binary response variable. Though it may be used as classifier (binary) by setting a threshold value. Let the response variable Y takes values 0 and 1. Then take $$P(Y=1)=E(Y)=\frac{1}{1+e^{-(\beta_0+\sum_{j=1}^p{\beta_jXj})}}$$ where $\beta_j$'s are regression coefficient,$X_j$ is $j_{th}$ predictor. Logistic regression finds $\beta_j$ by IRLS method. $y_i$ is predicted as
+$$\hat{y_i}=\frac{1}{1+e^{-(\hat{\beta_0}+\sum_{j=1}^p{\hat{\beta_j}X_{ji}})}}$$
+Suppose we chose a threshold 0<p<1. If $\hat{y_i}$ > p then it is assigned to '1', otherwise assigned to '0'.
+
+Now we use it to classify our data.
+```{r}
+model=glm(Class~.,data=data_train,family = binomial) #'binary' is used for two class problem
+summary(model)
+prob=predict(model,data_test,type='response')
+```
+
+`prob` will give the probability that the response is '1'. But for our case it should be '4'. Now we check the correspondence between '1' and '4'.
+```{r}
+contrasts(data_train$Class)
+```
+
+We see that '1' corresponds to '4' here.
+```{r}
+pred=rep(2,nrow(data_test))
+#As cancer case is sensative, we chose a low threshold 0.25
+pred[prob>0.25]=4
+tab_l1=table(pred,test_class)
+err(tab_l1)
+```
+
+Now we check without outliers.
+```{r}
+model1=glm(Class~.,data=data_train_out,family = binomial)
+prob1=predict(model1,data_test,type='response')
+pred1=rep(2,nrow(data_test))
+pred1[prob>0.25]=4
+tab_l2=table(pred1,test_class)
+err(tab_l2)
+```
+
+We see that accuracy is good and low error rates in both cases.
+
+### Linear Discriminant Analysis
+
+Cosider a training set consists of feature vectors $\underset{\sim}{x}$ with known class y. The classification problem is then to find a good predictor for the class y of any sample of the same distribution (not necessary from the trainig set) given only feature vector $\underline{x}$.
+
+LDA approaches the problem by assumig **p($\underset{\sim}{x}$|y=0)** and **p($\underset{\sim}{x}$|y=1)** are both normally distributed with **N($\underset{\sim}{\mu_0},\sum$)** and  **N($\underset{\sim}{\mu_1},\sum$)** respectively. Under this assumption the Bayes optimal solution is to predict the point as being from the class '1' if $$(\underset{\sim}{\mu_1}-\underset{\sim}{\mu_0})^T{\sum}^{-1}\underset{\sim}{x} > \frac{1}{2}(\underset{\sim}{\mu_1}-\underset{\sim}{\mu_0})^T{\sum}^{-1}(\underset{\sim}{\mu_1}+\underset{\sim}{\mu_0})$$
+$\underset{\sim}{\mu_0},\underset{\sim}{\mu_1}$ are estimated from class '0' and class '1' (for our case '2' and '4' respectively) and $\sum$ is estimated from all observations.
+
+Now we use it to classify our data.
+```{r,warning=F}
+library(MASS)
+model2=lda(Class~.,data=data_train)
+model2
+pred2=predict(model2,data_test)
+names(pred2)
+```
+
+Here `class` gives the prediction, `posterior` gives the posterior probability of each class for all observations, `x` is linear discriminant.
+```{r}
+tab_ld1=table(pred2$class,test_class)
+err(tab_ld1)
+```
+
+Now we check without outliers.
+```{r}
+model3=lda(Class~.,data=data_train_out)
+pred3=predict(model3,data_test)
+tab_ld2=table(pred3$class,test_class)
+err(tab_ld2)
+```
+
+We see that the model built with outliers gives a better result and it has very good accuracy , low errors.
+
+### Naive Bayes Classifier
+
+Naive Bayes Classifier deals with independent set of features. Given a new observation represented by vector $\underset{\sim}{x}=(x_1,x_2,\cdots,x_n)$ of n features, it assigns probabilities **p($C_k$|$x_1,x_2,\cdots,x_n$)** for each of k possible classes $C_k$ (in our data k=2) to this new observation . Using Bayes' Theorem we have **$p(C_k|x_1,x_2,\cdots,x_n)=\frac{p(C_k)p(\underset{\sim}{x}|C_k)}{p(\underset{\sim}{x})}$**
+
+The Bayes classifier is the function that assigns a class label $\hat{y}=C_k$ for some k if $p(C_k)p(\underset{\sim}{x}|C_k)$ is maximum over k=1(1)k.
+
+Now we use it to classify our data.
+```{r,warning=F}
+library(naivebayes)
+model4=naive_bayes(Class~.,data=data_train,usekernel = T) 
+pred4=predict(model4,data_test)
+tab_n1=table(pred4,test_class)
+err(tab_n1)
+```
+
+Now we check without outliers.
+```{r}
+model5=naive_bayes(Class~.,data=data_train_out,usekernel = T) 
+pred5=predict(model5,data_test)
+tab_n2=table(pred5,test_class)
+err(tab_n2)
+```
+
+We see that accuracy is good and low error rates in both cases.
+Here we use Kernel by `usekernel=T`. Now we check if use of kernel is better. `usekernel=F` is default setting.
+```{r}
+model6=naive_bayes(Class~.,data=data_train) 
+pred6=predict(model6,data_test)
+tab_n3=table(pred6,test_class)
+err(tab_n3)
+```
+
+Accuracy is differed by 0.7% (we can infer both accuracy is fine) but kernel-less model reduces 50% false negative error , so we consider this model as better.
+
+### Decision Tree
+
+![Nodes in a Tree](D:\IIT kanpur\2 nd sem\minerva regression\regression projet\dtree1.jpg)
+
+The above picture is a example of a decision tree. We put features and their cut_off in the nodes to divide the observations and leaf node gives the output class. To chose a feature in each node Gini impurity is used and that feature is selected whose Gini impurity is minimum. To set a cut-off for a numerical feature, arrange the observations in increasing order w.r.t. that particular feature, then find average values of that feature of consecutive observations, check Gini impurity by chosing each average as cut-off and chose that average as cut-off for which the Gini-impurity is minimum.
+
+Let there are **n** observations with response 'yes' and 'no'-
+![example](D:\IIT kanpur\2 nd sem\minerva regression\regression projet\dtree2.jpg)
+
+For the above picture , Gini impurity for node 2,  $g_1=1-(\frac{n_3}{n_1})^2-(\frac{n_4}{n_1})^2$
+
+Gini impurity for node 3,  $g_2=1-(\frac{n_5}{n_2})^2-(\frac{n_6}{n_2})^2$
+
+Gini impurity for node 1,  $g=\frac{n_1}{n}g_1+\frac{n_2}{n}g_2$
+
+Now we use it to classify our data.
+```{r,warning=F}
+library(party)
+tree=ctree(Class~.,data=data_train,controls = ctree_control(mincriterion = 0.9,minsplit = 30))
+plot(tree)
+pred7=predict(tree,data_test)
+tab_d1=table(pred7,test_class)
+err(tab_d1)
+```
+
+Here `mincriterion=0.9` means a variable is used if there is 90% confidence that the variable is significant. `minsplit=30` means a node will further be splited if there is atleast 30 observations.
+
+Now we check without outliers.
+```{r}
+tree1=ctree(Class~.,data=data_train_out,controls = ctree_control(mincriterion = 0.9,minsplit = 30))
+pred8=predict(tree1,data_test)
+tab_d2=table(pred8,test_class)
+err(tab_d2)
+```
+
+We see that accuracy is good and low error rates in both cases.
+
+### Random Forest Classification
+
+It uses multiple decisison trees on the basis of samples designed by Bootstrap method. Then run a new observation through all the trees and then it is assigned to a class whose frequency is highest.
+
+Bootstrap method uses 'With Replacement' ploicy to collect **n** sample from population of size **n**. So, clearly many observations are not taken into account but their class is known. Run this 'out of bag' observation through the trees and check how much proportion of the trees incorrectly classify the observation. This proportion is termed as 'out of bag' error.
+
+Now we use it to classify our data.
+```{r,warning=F}
+library(randomForest)
+model9=randomForest(Class~.,data=data_train,ntree=200,mtry=3) #mtry is no. of feature used randomly to form a node of a tree.mtry is generally taken as sqroot of no. of features. 
+model9
+pred9=predict(model9,data_test)
+tab_r1=table(pred9,test_class)
+err(tab_r1)
+```
+
+Now we check without outliers.
+```{r}
+model10=randomForest(Class~.,data=data_train_out,ntree=200,mtry=3)
+pred10=predict(model10,data_test)
+tab_r2=table(pred10,test_class)
+err(tab_r2)
+```
+
+Now we vary `ntree` and `mtry` and check the best values of these using `tune()`.
+```{r,warning=F}
+library(e1071)
+tune_out=tune(randomForest,Class~.,data=data_train,ranges = list(ntree=c(20,50,75,100,150,200,250,300),mtry=c(1:9)))
+tune_out$best.parameters #best parameters among the given parameters
+bmodel=tune_out$best.model #best model using best parameter
+pred11=predict(bmodel,data_test) #prediction using best model
+tab_r3=table(pred11,test_class)
+err(tab_r3)
+```
+
+Here the new model (best) produces the best result
+
+### Support Vector Machine
+
+In SVM algorithm, we plot each data item as a point in n_dimensional space (where n is number of feature) with the value of each feature being the value of a particular co-ordinate. Then we perform the Classification by finding the hyperplane that differentiates the two classes very well. The points which are closest to hyperplane are termed as support vectors. The area between the separator (hyperplane) and the support vectors are called **margin**.
+
+![svm](D:\IIT kanpur\2 nd sem\minerva regression\regression projet\svm.jpg)
+
+There may be situation where we can't divide the points by a hyperplane. For this, SVM algorithm has **kernel** trick. A kernel is a function that quantifies the similarity of two observations.  It converts non-separable problem to separable problem by using some higher dimentional curve i.e. non-linear separation (using this trick we can classify more than two classes). Example of kernel are *radial*,*polynomial*. Radial kernel is $$K(x_i,x_{i'})=e^{(-\gamma\sum_{j=1}^p(x_{ij}-x_{i'j})^2)}$$
+
+Now we use it to classify our data.
+```{r,warning=F}
+library(e1071)
+model12=svm(Class~.,data=data_train,kernel='linear',cost=10,scale = F)
+model12
+model12$index #index of support vectors
+pred12=predict(model12,data_test)
+tab_s1=table(pred12,test_class)
+err(tab_s1)
+```
+
+Now we check without outliers.
+```{r}
+model13=svm(Class~.,data=data_train_out,kernel='linear',cost=10,scale = F)
+model13$index #index of support vectors
+pred13=predict(model13,data_test)
+tab_s2=table(pred13,test_class)
+err(tab_s1)
+```
+
+We can also include `gamma` in the model.Now we will vary `kernel`,`cost` and `gamma` and look for best parameters.
+```{r}
+tune.out=tune(svm,Class~.,data=data_train,  
+  ranges = list(kernel=c('linear','radial'),cost=c(0.001,0.01,0.1,1,5,10,100),gamma=c(0.5,1,2,3,4)))
+tune.out$best.parameters
+model14=tune.out$best.model
+pred14=predict(model14,data_test)
+tab_s3=table(pred14,test_class)
+err(tab_s3)
+```
+
+So,as expected, tuned model gives the best result.
+
+### Artificial Neural Network
+
+ANN is crude networks of neurons based on the neural structure of the brain. They processes record one at a time and learn by comparing their classification of the record with the known actual classification of the record. The errors in the initial classification of the first record is fed back into the network,  used to modify the networks algorithm for further iterations. 
+
+A neuron in an ann is
+![ann1](D:\IIT kanpur\2 nd sem\minerva regression\regression projet\ann1.jpg)
+
+(i) A set of input values(x) and associated weights(w) and a bias input 1(or 0) with weight $w_0$
+
+(ii) output of the net input $w_0+\sum{w_ix_i}$ through a function **f** i.e. f($w_0+\sum{w_ix_i}$)
+ 
+(iii) **PU** collects the inputs from all input node and converts to net input $w_0+\sum{w_ix_i}$, **PU** process the input value and generates the output 
+
+f($w_0+\sum{w_ix_i}$). Examples of **f** are **f**(x)=$\frac{1}{1+e^{-x}}$ (sigmoid transfer function), **f**(x)=tanh(X) (tanh transfer function)
+
+Note that there may be hidden node shown in teh right hand side of the above picture.
+
+![](D:\IIT kanpur\2 nd sem\minerva regression\regression projet\ann2.jpg)
+
+Let ($\underline{x_p},y_p$) be the training observation, p=1(1)n.
+
+For $j_{th}$ hidden node, input   $net_{pj}^h=\sum_{i=1}^Mw_{ij}x_{pi}$ (ignoring bias)
+
+output    $f(net_{pj}^h)=i_{pj}$ (say)
+
+For $l_{th}$ final node,  input        $T_l=\sum_{j=1}^K\beta_{jl}i_{pj}$
+
+output     $o_l=\frac{e^{T_l}}{\sum_{l=1}^Le^{T_l}}$     (for our case L=2)
+
+New observation is classified to class '$l$' if $o_l$ is maximum over $l=1(1)L$
+
+Note that different **f** may be used in different node.
+
+Weights $w_{ij},\beta_{jl}$ are estimed by minimizing the sum of square error $\sum_{p=1}^n\sum_{l=1}^L(y_{pl}-o_l)^2$
+
+Now we use it to classify our data. Here firstly we standardize our features.
+```{r,warning=F}
+train_norm=data_train
+test_norm=data_test
+for(i in 2:10){
+  train_norm[,i]=(train_norm[,i]-min(train_norm[,i]))/(max(train_norm[,i])-min(train_norm[,i]))
+  test_norm[,i]=(test_norm[,i]-min(test_norm[,i]))/(max(test_norm[,i])-min(test_norm[,i]))
+}
+train_norm_out=train_norm[-out,]
+library(neuralnet)
+model15=neuralnet(Class~.,data=train_norm,hidden = 3,err.fct = 'sse',linear.output = F)
+plot(model15)
+output1=compute(model15,test_norm[,-1])
+p1=output1$net.result #gives the probability of being classified as first and second class for each observation
+pred15=ifelse(p1[,2]>0.25,4,2) #defining if prob(being '4')>o.25 then , classified as '4'.As cancer is case sensitive we use a lower threshold 0.25
+tab_a1=table(pred15,test_class)
+err(tab_a1)
+```
+
+Now we check without outliers.
+```{r}
+model16=neuralnet(Class~.,data=train_norm_out,hidden = 3,err.fct = 'sse',linear.output = F)
+output2=compute(model16,test_norm[,-1])
+p2=output2$net.result
+pred16=ifelse(p2[,2]>0.25,4,2)
+tab_a2=table(pred16,test_class)
+err(tab_a2)
+```
+
+We see that later case provides better result with zero false negative error. So, here excluding outliers is effective.
+
+Now we check what will happen if we take two layers, 3 nodes at first layer and a single node in second hidden layer. We will use the data without outlier. 
+```{r}
+model17=neuralnet(Class~.,data=train_norm_out,hidden = c(3,1),err.fct = 'sse',linear.output = F)
+output3=compute(model17,test_norm[,-1])
+p3=output3$net.result
+pred17=ifelse(p3[,2]>0.25,4,2)
+tab_a3=table(pred17,test_class)
+err(tab_a3)
+```
+
+It gives good results but not better than before as error in false negative increases here.
+
+# Important Features
+
+Now we will check importance of each features based on train set. We use 10-fold Cross Validation (CV) which is repeated 5 times on the basis of the method learning vector quantization (lvq).
+```{r,warning=F}
+library(caret)
+control=trainControl(method='repeatedcv',number = 10,repeats = 5)
+m=train(Class~.,data=data,method='lvq',trControl=control)
+importance=varImp(m,scale=F)
+print(importance)
+plot(importance)
+```
+
+We see that the how much a feture is important (checking their ranks).
+
+# Feature Selection
+
+For feature selection we will use Random Forest and check by 10-fold Cross Validation once.
+```{r,warning=F}
+control1=rfeControl(functions = rfFuncs, method = 'cv',number=10)
+results=rfe(data[,2:10],data[,1],sizes = 1:9, rfeControl = control1)
+print(results)
+predictors(results)
+plot(results,type=c('g','o'))
+
+```
+
+From `predictors(results)` and the above graph it is clear that we can remove the feature 'Mitosis' without any loss in accuracy. The top five predictors are Bare_nuclei, Clump_thik, Unif_cell_size, Bland_chrom, Unif_cell_shape and from the graph it is clear that we can use only Bare_nuclei, Clump_thik and Unif_cell_size to get accuracy more than 96% if there is a problem of time and cost .
+
+# Conclusion
+
+Every classification model shows accuracy more than 95%, mis_classification error less than 3% and false negative error less than 2.2% (except Decision Tree, there false negative error was 3.57%, accuracy of this model lowest among all models). We can conclude that we are able to build strong models with respect to our data. We see that the most feature is 'Uniformity of cell size'. 'Mitosis' can be removed for classisfication with no loss in accuracy. Overall we can say that our models are pretty good.
+
+# Acknowledgement
+
+I would like to thank various websites like www.machinelearningmastery.com, Analytics Vidhya, UCI machine Learning Respiratory, sites.google.com, www.saedsayad.com, www.markdownguide.org etc , Dr. Bharatendra Rai youtube channel, StatQuest youtube channel , WolBerg 1990's paper on Multisurface method of pattern separation and special thanks to the book 'Introduction to Statistical Learning'.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
