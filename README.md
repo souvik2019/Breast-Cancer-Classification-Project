@@ -5,4 +5,4 @@ This Project contains Machine Learning Classification
 
 KNN,  Logistic Regression,  LDA,  Decision Tree,  Random Forest,  Naive Bayes,  SVM,  ANN
 
-With each model we got over 95% accuracy 
+With each model we got over 95% Recall
