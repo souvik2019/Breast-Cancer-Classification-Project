@@ -3,6 +3,6 @@ This Project contains Machine Learning Classification
 
 **Machine Learning Techniques**
 
-KNN,  Logistic Regression,  LDA,  Decision Tree,  Random Forest,  Naive Bayes,  SVM,  ANN
+KNN,  Logistic Regression,  LDA,  Decision Tree,  Random Forest
 
 With each model we got over 95% Recall
